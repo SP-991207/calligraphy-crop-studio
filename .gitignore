@@ -1,0 +1,4 @@
+dist/
+check-syntax.js
+__pycache__/
+.DS_Store
