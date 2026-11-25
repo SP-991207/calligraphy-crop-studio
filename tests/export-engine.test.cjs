@@ -1,0 +1,17 @@
+const assert=require('node:assert/strict'),fs=require('node:fs');
+const E=require('../export-engine.js');
+const rows=[1,2,3].map(index=>({id:'字-'+index,index,char:['天','地','玄'][index-1],label:['天','地','玄'][index-1],style:index===2?'草书':'楷书',box:[10,20,30,40],reviewed:false,note:'已保留原始底色'}));
+const current=E.createPlan(rows,{scope:'current',currentId:'字-2',format:'raw'});assert.equal(current.kind,'png');assert.equal(current.records[0].char,'地');assert.equal(current.imageCount,1);
+const multi=E.createPlan(rows,{scope:'selected',selectedIds:['字-3','字-1','字-1','已删除'],format:'both'});assert.deepEqual(multi.records.map(r=>r.id),['字-1','字-3']);assert.equal(multi.kind,'zip');assert.equal(multi.imageCount,4);
+const all=E.createPlan(rows,{scope:'all',format:'labeled'});assert.equal(all.imageCount,3);assert.deepEqual(all.variants,['labeled']);
+assert.throws(()=>E.createPlan(rows,{scope:'selected',selectedIds:[]}),/勾选/);assert.throws(()=>E.createPlan(rows,{scope:'current',currentId:'不存在'}),/点击/);assert.throws(()=>E.createPlan(rows,{format:'jpeg'}),/无效/);
+rows[0].label='已修改';assert.equal(multi.records[0].label,'天');rows[0].label='天';
+assert.notEqual(E.fileName(rows[0],false),E.fileName(rows[0],true));assert(!E.fileName({...rows[0],label:'../天:*'},false).includes('/'));
+const onePixelPNG=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aX1sAAAAASUVORK5CYII=','base64');
+(async()=>{const calls=[];const files=await E.buildFiles(multi,{sourceName:'原始整页.jpg',width:100,height:200,getPNG:async(r,labeled)=>{calls.push([r.id,labeled]);return new Uint8Array(onePixelPNG);}});
+assert.equal(calls.length,4);assert(calls.every(([id])=>id==='字-1'||id==='字-3'));assert.equal(files.filter(f=>f.name.endsWith('.png')).length,4);assert.equal(new Set(files.map(f=>f.name)).size,files.length);
+const meta=JSON.parse(new TextDecoder().decode(files.find(f=>f.name.endsWith('.json')).data));assert.deepEqual(meta.records.map(r=>r.id),['字-1','字-3']);assert.equal(meta.export_scope,'selected');assert.equal(meta.width,100);assert.equal(meta.height,200);
+const csv=new TextDecoder().decode(files.find(f=>f.name.endsWith('.csv')).data);assert(csv.includes('天')&&csv.includes('玄'));assert(!csv.includes('地'));assert.equal(csv.split('\r\n').length,3);
+const zip=E.makeZip(files);if(process.argv[2])fs.writeFileSync(process.argv[2],Buffer.from(await zip.arrayBuffer()));
+console.log('PASS: single PNG, multiple selection, all records, format choice, snapshot, safe names, selection-only CSV/JSON, valid ZIP payload');
+})().catch(e=>{console.error(e);process.exit(1);});
